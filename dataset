@@ -1,0 +1,675 @@
+import json
+import pandas as pd
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, f1_score
+from torch.utils.data import Dataset
+import numpy as np
+
+
+# /content/drive/MyDrive/restaurant_dataset.py
+"""
+Restaurant reviews dataset with aspect-based sentiment annotations.
+Each review has one or more aspects (food, service, ambiance, price) with associated sentiments.
+"""
+
+dataset = [
+    {
+        "review": "The ambiance was cozy and inviting, perfect for a date night.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The steak was tender and juicy, but the waiter was rude.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "positive"},
+            {"aspect": "service", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The rice was undercooked and bland.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "We loved the vibe of the place and the friendly staff.",
+        "aspects": [
+            {"aspect": "ambiance", "sentiment": "positive"},
+            {"aspect": "service", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "Everything was overpriced for such average food.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The dessert was heavenly, and the ambiance made it even better.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "positive"},
+            {"aspect": "ambiance", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "Service was slow but the pasta was delightful.",
+        "aspects": [
+            {"aspect": "service", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "The waiter kept forgetting our order. Very frustrating!",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "Cozy place with relaxing music and lovely lighting.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "Too expensive for what we got.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The pasta was flavorful and rich in taste.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "Our waiter was so kind and attentive.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The lighting was too dim, couldn't even see the menu properly.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "Portions were small for the price we paid.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "Loved the cozy vibe and soft jazz music playing.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The desert was too sweet for my taste.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Very overpriced for the quality of food and service.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "negative"},
+            {"aspect": "service", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The staff greeted us warmly and seated us quickly.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "Nice vibe, but the steak was overcooked.",
+        "aspects": [
+            {"aspect": "ambiance", "sentiment": "positive"},
+            {"aspect": "food", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The waiter spilled water on the table and didn't apologize.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The chicken was perfectly seasoned and cooked to perfection.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place felt cramped and noisy, not relaxing at all.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "Our server was incredibly rude when we asked for a refill.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The prices were reasonable for such high-quality dishes.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The salad was fresh and vibrant, paired with a great dressing.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The dim lighting and soft music created a romantic vibe.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "Waited over 30 minutes for our drinks, unacceptable.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The food was tasty but way too expensive for the portion size.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "positive"},
+            {"aspect": "price", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The pizza had a soggy crust and lacked flavor.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was so welcoming, made us feel right at home.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "Loved the modern decor and chill atmosphere.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The bill was shockingly high for such mediocre service.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "service", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The soup was lukewarm and tasted like it was from a can.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Our waiter checked on us regularly and was super polite.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The outdoor seating was lovely with a great view.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The dessert menu was overpriced for such small portions.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The burger was juicy and packed with flavor.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The restaurant was too loud to have a conversation.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "Service was prompt and the staff was very attentive.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The fish was overcooked and dry, really disappointing.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The cozy fireplace added such a warm touch to the evening.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The prices were fair for the quality and portion size.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The waiter was distracted and forgot our side dishes.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The cheesecake was creamy and absolutely divine.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The music was too loud, made it hard to enjoy our meal.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The food was amazing, but the service was a bit slow.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "positive"},
+            {"aspect": "service", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The prices felt steep for such average flavors.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The staff went above and beyond to make our night special.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The ambiance was elegant with beautiful table settings.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The pasta was too salty and barely edible.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Great value for the quality of food we received.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The server was not professional as he kept mixing up our orders.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The rooftop seating had a stunning city view.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The appetizers were bland and overpriced.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "negative"},
+            {"aspect": "price", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The steak was cooked perfectly, just as I requested.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place was too cold, made it uncomfortable to sit.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was quick to resolve a small issue with our order.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The prices were a bit high, but the food was worth it.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "The soup was rich and comforting, perfect for a chilly day.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The lighting was harsh and gave the place a cheap feel.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The waiter ignored us for most of the evening.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The dessert was a great value for the price.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The risotto was creamy and bursting with flavor.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place was so noisy we could barely hear each other.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was polite and made great recommendations.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The food was cold by the time it reached our table.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The cozy booths and warm lighting were so inviting.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The prices were outrageous for such small portions.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The service was exceptional, every detail was perfect.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The chicken was dry and lacked any real taste.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The soft jazz and candlelit tables set a perfect mood.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The bill was surprisingly affordable for such great food.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "positive"},
+            {"aspect": "food", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "The waiter was slow and seemed uninterested.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The sushi was fresh and beautifully presented.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place felt outdated and needed a refresh.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was so kind, even helped us with dietary needs.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The food was overpriced for such average quality.",
+        "aspects": [
+            {"aspect": "price", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The tiramisu was light and absolutely delicious.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The tables were too close together, no privacy at all.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The service was quick and the staff was cheerful.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The salad was wilted and tasted old.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The warm lighting and rustic decor were charming.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The prices were fair for the generous portions.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The waiter was inattentive and got our order wrong.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The pasta was al dente and the sauce was amazing.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place was too dark, hard to read the menu.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was so accommodating for our large group.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The food was bland and not worth the high price.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "negative"},
+            {"aspect": "price", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The dessert was a perfect end to a great meal.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The ambiance was cold and uninviting.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The service was flawless, couldn't ask for more.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The pizza was greasy and lacked toppings.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The outdoor patio was serene and beautifully decorated.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The prices were reasonable for the quality offered.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The waiter was rude when we asked for separate checks.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The salmon was perfectly cooked and melted in my mouth.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The place was too stuffy, needed better ventilation.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff was attentive and made us feel valued.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The appetizers were tiny and overpriced.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "negative"},
+            {"aspect": "price", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The truffle pasta was absolutely divine, perfectly cooked and rich.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "Our server completely ignored us for 20 minutes, terrible service.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The vibrant decor created a really lively and enjoyable atmosphere.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "Portion sizes were ridiculously small for the high prices charged.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The sushi was fresh and melted in my mouth, truly exquisite.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The restaurant was so noisy we couldn't hear each other speak.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff were incredibly attentive and made our dining experience special.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The burger was dry and tasteless, a huge disappointment.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Great value for money, the quality far exceeded the cost.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The ambiance was dull and uninspired, very generic.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The cocktails were perfectly mixed and very refreshing.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "Our waiter was rude and dismissive, ruining our evening.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The cozy seating and soft lighting created a truly romantic setting.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "Absolutely shocked by how expensive a simple dish was here.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The fresh oysters were plump and delicious, a highlight of the meal.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "Slow service and cold food, a truly bad combination.",
+        "aspects": [
+            {"aspect": "service", "sentiment": "negative"},
+            {"aspect": "food", "sentiment": "negative"}
+        ]
+    },
+    {
+        "review": "The outdoor patio provided a lovely view and comfortable seating.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The chicken was rubbery and seemed undercooked, very concerning.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Prices were surprisingly affordable for such high-quality ingredients.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The staff were helpful and went above and beyond to accommodate us.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The steak was tough and overcooked, very disappointing.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The ambiance was too formal and stuffy for a casual dinner.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The dessert selection was fantastic, every bite was pure bliss.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "We waited forever for our checks, service was incredibly slow.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The sophisticated decor made for an elegant dining experience.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The bill was outrageous for the meager portions we received.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The pizza crust was perfectly crispy and the toppings were fresh.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "Our server seemed distracted and kept forgetting our requests.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The lighting was too dim, making it hard to read the menu.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "A hidden gem! The food was spectacular and the service impeccable.",
+        "aspects": [
+            {"aspect": "food", "sentiment": "positive"},
+            {"aspect": "service", "sentiment": "positive"}
+        ]
+    },
+    {
+        "review": "The soup was bland and tasted like it came from a can.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The staff greeted us warmly and seated us without delay.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "Too loud and cramped, not a relaxing place to eat.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The prices were a steal for the quality of seafood we enjoyed.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The calamari was soggy and greasy, very unappetizing.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "Our waitress was so cheerful and made great recommendations.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The music was jarring and too loud, ruining the ambiance.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "The spring rolls were crispy and full of flavor.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "For what you get, the cost is simply not justified.",
+        "aspects": [{"aspect": "price", "sentiment": "negative"}]
+    },
+    {
+        "review": "The restaurant was spotless and very well maintained.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    },
+    {
+        "review": "The bread was stale and the appetizer seemed old.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The bartender was very friendly and made excellent drinks.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The atmosphere was stuffy and unwelcoming.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "Generous portions and fair prices, a winning combination.",
+        "aspects": [{"aspect": "price", "sentiment": "positive"}]
+    },
+    {
+        "review": "The curry lacked spice and flavor, quite disappointing.",
+        "aspects": [{"aspect": "food", "sentiment": "negative"}]
+    },
+    {
+        "review": "The table service was seamless and very efficient.",
+        "aspects": [{"aspect": "service", "sentiment": "positive"}]
+    },
+    {
+        "review": "The seating was uncomfortable and the tables too small.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "negative"}]
+    },
+    {
+        "review": "Every dish was cooked to perfection and tasted amazing.",
+        "aspects": [{"aspect": "food", "sentiment": "positive"}]
+    },
+    {
+        "review": "The manager was rude when we complained about the cold food.",
+        "aspects": [{"aspect": "service", "sentiment": "negative"}]
+    },
+    {
+        "review": "The quaint decor and quiet setting were perfect for our anniversary.",
+        "aspects": [{"aspect": "ambiance", "sentiment": "positive"}]
+    }
+
+]
+
